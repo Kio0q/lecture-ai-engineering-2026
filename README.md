@@ -81,7 +81,13 @@ pyproject.toml / uv.lock  依存パッケージとその固定版
 
 ## モデルの切り替え
 
-既定モデルは `gemini-3.5-flash-lite` です。環境変数 `AIE_MODEL` で切り替えられます。
+既定モデルは `gemini-3.5-flash-lite` です。環境変数 `AIE_MODEL` で切り替えられます。質問を続けると、同じ実行中は会話履歴を保ったまま応答します。終了するには `exit` または `quit` を入力してください。
+
+```bash
+uv run python -m app.ask
+```
+
+最初の質問をコマンドライン引数で渡すこともできます。
 
 ```bash
 AIE_MODEL=gemini-3.5-flash uv run python -m app.ask "LoRAとは何ですか？"

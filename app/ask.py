@@ -1,19 +1,21 @@
-"""第1回: 素のLLMに1回だけ質問するスクリプト。
+"""第1回: 会話履歴を保ちながら素のLLMに質問するスクリプト。
 
 使い方:
     uv run python -m app.ask "LoRAとは何ですか？"
-    uv run python -m app.ask            # 質問を省略すると、講座に固有の質問をする
+    uv run python -m app.ask            # 対話入力を開始する
 
-ツールも会話履歴も持たない「素の」呼び出し。
+ツールを持たない「素の」呼び出し。
 講座に固有のことを聞くと、「分からない」と答えるか、一般論でもっともらしく答える
 （講座の実際とは違う）ことを確かめよう。
 （第3回で、用語集を検索できるエージェントにして改善する）
 """
 
 import argparse
+from time import perf_counter
 
 from google import genai
 from google.genai import errors
+from google.genai import types
 
 from app.config import MODEL, api_error_message, get_api_key
 
@@ -21,9 +23,22 @@ from app.config import MODEL, api_error_message, get_api_key
 DEFAULT_QUESTION = "AIE2026の講座の宿題にある「3レベル」とは何ですか？"
 
 
-def ask(question: str) -> str:
+def create_chat():
     client = genai.Client(api_key=get_api_key())
-    response = client.models.generate_content(model=MODEL, contents=question)
+    chat = client.chats.create(
+        model=MODEL,
+        config=types.GenerateContentConfig(temperature=1.0),
+    )
+    return client, chat
+
+
+def ask_in_chat(chat, question: str) -> str:
+    started_at = perf_counter()
+    try:
+        response = chat.send_message(question)
+    finally:
+        elapsed = perf_counter() - started_at
+        print(f"[応答時間] {elapsed:.2f}秒")
 
     usage = response.usage_metadata
     if usage is None:
@@ -37,17 +52,48 @@ def ask(question: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="素のLLMに質問する")
-    parser.add_argument("question", nargs="?", default=DEFAULT_QUESTION)
+    parser = argparse.ArgumentParser(description="会話履歴を保ちながら素のLLMに質問する")
+    parser.add_argument("question", nargs="?", help="最初に送る質問（省略すると入力待ち）")
     args = parser.parse_args()
 
+    client, chat = create_chat()
     print(f"[model] {MODEL}")
-    print(f"[質問] {args.question}\n")
+    print("終了するには exit または quit を入力してください。\n")
+
+    question = args.question
     try:
-        print(ask(args.question))
+        while True:
+            if question is None:
+                try:
+                    question = input("質問> ")
+                except EOFError:
+                    print()
+                    break
+
+            question = question.strip()
+            if question.lower() in {"exit", "quit"}:
+                break
+            if not question:
+                question = None
+                continue
+
+            print(f"[質問] {question}\n")
+            print(ask_in_chat(chat, question))
+            print()
+            question = None
     except errors.APIError as e:
         print(api_error_message(e.code, e.message))
         raise SystemExit(1)
+    finally:
+        client.close()
+
+
+def ask(question: str) -> str:
+    client, chat = create_chat()
+    try:
+        return ask_in_chat(chat, question)
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
